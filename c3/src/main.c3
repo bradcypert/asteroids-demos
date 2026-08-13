@@ -144,19 +144,18 @@ fn void spawn_wave(Game* g)
 fn void init_game(Game* g)
 {
     random::Sfc64Random saved_rng = g.rng;
-    *g = {};
-    g.rng = saved_rng;
-    g.ship.position = { SCREEN_WIDTH / 2.0, SCREEN_HEIGHT / 2.0 };
-    g.ship.velocity = { 0, 0 };
-    g.ship.rotation = 0.0;
-    g.ship.alive = true;
-    g.ship.invulnerable_timer = INVULNERABILITY_TIME;
-    g.score = 0;
-    g.lives = STARTING_LIVES;
-    g.wave = 1;
-    g.fire_cooldown = 0.0;
-    g.respawn_timer = 0.0;
-    g.state = PLAYING;
+    *g = {
+        .rng = saved_rng,
+        .ship = {
+            .position = { SCREEN_WIDTH / 2.0, SCREEN_HEIGHT / 2.0 },
+            .alive = true,
+            .invulnerable_timer = INVULNERABILITY_TIME
+        },
+        .score = 0,
+        .lives = STARTING_LIVES,
+        .wave = 1,
+        .state = PLAYING
+    };
     spawn_wave(g);
 }
 
@@ -338,16 +337,13 @@ fn void draw_ship(Game* g)
         g.ship.position.y - math::cos(g.ship.rotation - 2.5f) * SHIP_SIZE,
     };
 
-    rl::draw_triangle_lines(
-        { nose.x, nose.y },
-        { left.x, left.y },
-        { right.x, right.y },
-        rl::WHITE);
+    rl::draw_triangle_lines(nose, left, right, rl::WHITE);
 }
 
 fn void draw(Game* g)
 {
     rl::begin_drawing();
+    defer rl::end_drawing();
     rl::clear_background(rl::BLACK);
 
     draw_ship(g);
@@ -361,7 +357,7 @@ fn void draw(Game* g)
     foreach (&b : g.bullets)
     {
         if (!b.active) continue;
-        rl::draw_circle_v({ b.position.x, b.position.y }, BULLET_RADIUS, rl::YELLOW);
+        rl::draw_circle_v(b.position, BULLET_RADIUS, rl::YELLOW);
     }
 
     rl::draw_text(rl::text_format("SCORE %d", g.score), 10, 10, 20, rl::WHITE);
@@ -377,13 +373,12 @@ fn void draw(Game* g)
         int w2 = rl::measure_text(sub, 20);
         rl::draw_text(sub, SCREEN_WIDTH / 2 - w2 / 2, SCREEN_HEIGHT / 2 + 10, 20, rl::WHITE);
     }
-
-    rl::end_drawing();
 }
 
 fn int main(String[] args)
 {
     rl::init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "Asteroids - C3");
+    defer rl::close_window();
     rl::set_target_fps(60);
 
     Game game;
@@ -397,6 +392,5 @@ fn int main(String[] args)
         draw(&game);
     }
 
-    rl::close_window();
     return 0;
 }
