@@ -157,7 +157,7 @@ procedure Asteroids is
       end loop;
    end;
 
-   procedure Init_Game (g: in out Game) is
+   procedure Init_Game (g: out Game) is
    begin
       g := ( others => <> );  -- (re)set to default values
       Spawn_Wave (g);

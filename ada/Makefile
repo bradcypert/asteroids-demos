@@ -31,7 +31,7 @@ run: $(BIN)
 # Clean
 clean:
 	rm -f *.o $(BIN) $(BIN).exe *.ali
-	rm -f *.ads
+	rm -f *_h.ads
 
 distclean: clean
 	rm -rf raylib-6.0_win64_mingw-w64
