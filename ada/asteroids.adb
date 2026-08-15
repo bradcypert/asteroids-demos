@@ -138,7 +138,7 @@ procedure Asteroids is
       if p.x > Float(SCREEN_WIDTH) then p.x := p.x - Float(SCREEN_WIDTH); end if;
       if p.y < 0.0 then p.y := p.y + Float(SCREEN_HEIGHT); end if;
       if p.y > Float(SCREEN_HEIGHT) then p.y := p.y - Float(SCREEN_HEIGHT); end if;
-   	return p;
+      return p;
    end;
 
    procedure Spawn_Wave (g: in out Game) is
@@ -190,7 +190,7 @@ procedure Asteroids is
 
    procedure Split_Asteroid (g: in out Game; a: in out Asteroid) is
    begin
-	   g.score := g.score + Asteroid_Score(a.size);
+      g.score := g.score + Asteroid_Score(a.size);
       if a.size /= Small then
          for i in 1 .. ASTEROID_SPLIT_COUNT loop
             Spawn_Asteroid (g, a.position, Asteroid_Size'Pred(a.size) );
@@ -318,7 +318,7 @@ procedure Asteroids is
       end if;
 
       declare
-         nose : Vec2 := (g.ship.position.x + Sin (g.ship.rotation) * SHIP_SIZE, g.ship.position.y - Cos(g.ship.rotation) * SHIP_SIZE);
+         nose : Vec2 := (g.ship.position.x + Sin(g.ship.rotation) * SHIP_SIZE, g.ship.position.y - Cos(g.ship.rotation) * SHIP_SIZE);
          left : Vec2 := (g.ship.position.x + Sin(g.ship.rotation + 2.5) * SHIP_SIZE, g.ship.position.y - Cos(g.ship.rotation + 2.5) * SHIP_SIZE );
          right: Vec2 := (g.ship.position.x + Sin(g.ship.rotation - 2.5) * SHIP_SIZE, g.ship.position.y - Cos(g.ship.rotation - 2.5) * SHIP_SIZE );
       begin
