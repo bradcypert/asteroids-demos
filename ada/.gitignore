@@ -1,0 +1,7 @@
+raylib-6.0_win64_mingw-w64.zip
+raylib-6.0_win64_mingw-w64
+raylib.dll
+*.o
+*.ali
+*.exe
+*_h.ads
