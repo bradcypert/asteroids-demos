@@ -24,17 +24,13 @@ const int STARTING_LIVES = 3;
 const int STARTING_ASTEROIDS = 4;
 const float INVULNERABILITY_TIME = 2.0;
 const float RESPAWN_DELAY = 1.5;
-const float TAU = 2.0 * math::PI;
 
-enum AsteroidSize : int
+enum AsteroidSize : int (float radius, int score)
 {
-    LARGE,
-    MEDIUM,
-    SMALL,
+    LARGE  { 40,  20 },
+    MEDIUM { 22,  50 },
+    SMALL  { 12, 100 },
 }
-
-const float[3] ASTEROID_RADIUS = { 40.0, 22.0, 12.0 };
-const int[3] ASTEROID_SCORE = { 20, 50, 100 };
 
 enum GameState : int
 {
@@ -42,11 +38,7 @@ enum GameState : int
     GAME_OVER,
 }
 
-struct Vec2
-{
-    float x;
-    float y;
-}
+alias Vec2 = float[<2>];
 
 struct Ship
 {
@@ -89,10 +81,6 @@ struct Game
     random::Sfc64Random rng;
 }
 
-fn Vec2 vec2_add(Vec2 a, Vec2 b) => { a.x + b.x, a.y + b.y };
-fn Vec2 vec2_scale(Vec2 a, float s) => { a.x * s, a.y * s };
-fn float vec2_length(Vec2 a) => math::sqrt(a.x * a.x + a.y * a.y);
-
 fn float rand_float(Game* g, float min, float max)
 {
     return min + (max - min) * random::next_float(&g.rng);
@@ -109,25 +97,22 @@ fn Vec2 wrap_position(Vec2 pos)
 
 fn bool circle_collide(Vec2 a, float ra, Vec2 b, float rb)
 {
-    float dx = a.x - b.x;
-    float dy = a.y - b.y;
-    float dist = math::sqrt(dx * dx + dy * dy);
-    return dist < (ra + rb);
+    return a.distance(b) < (ra + rb);
 }
 
 fn void spawn_asteroid(Game* g, Vec2 position, AsteroidSize size)
 {
-    for (int i = 0; i < MAX_ASTEROIDS; i++)
+    foreach (&a : g.asteroids)
     {
-        if (!g.asteroids[i].active)
+        if (!a.active)
         {
-            float angle = rand_float(g, 0.0, TAU);
+            float angle = rand_float(g, 0.0, math::TAU);
             float speed = rand_float(g, ASTEROID_SPEED_MIN, ASTEROID_SPEED_MAX);
-            g.asteroids[i] = {
+            *a = {
                 .position = position,
                 .velocity = { math::cos(angle) * speed, math::sin(angle) * speed },
                 .size = size,
-                .rotation = rand_float(g, 0.0, TAU),
+                .rotation = rand_float(g, 0.0, math::TAU),
                 .rotation_speed = rand_float(g, -2.0, 2.0),
                 .active = true,
             };
@@ -144,13 +129,13 @@ fn void spawn_wave(Game* g)
         Vec2 pos;
         if (random::rand(2) == 0)
         {
-            pos.x = (random::rand(2) == 0) ? 0.0 : (float)SCREEN_WIDTH;
-            pos.y = rand_float(g, 0.0, (float)SCREEN_HEIGHT);
+            pos.x = (random::rand(2) == 0) ? 0 : SCREEN_WIDTH;
+            pos.y = rand_float(g, 0, SCREEN_HEIGHT);
         }
         else
         {
-            pos.x = rand_float(g, 0.0, (float)SCREEN_WIDTH);
-            pos.y = (random::rand(2) == 0) ? 0.0 : (float)SCREEN_HEIGHT;
+            pos.x = rand_float(g, 0.0, SCREEN_WIDTH);
+            pos.y = (random::rand(2) == 0) ? 0 : SCREEN_HEIGHT;
         }
         spawn_asteroid(g, pos, AsteroidSize.LARGE);
     }
@@ -159,34 +144,33 @@ fn void spawn_wave(Game* g)
 fn void init_game(Game* g)
 {
     random::Sfc64Random saved_rng = g.rng;
-    *g = {};
-    g.rng = saved_rng;
-    g.ship.position = { SCREEN_WIDTH / 2.0, SCREEN_HEIGHT / 2.0 };
-    g.ship.velocity = { 0, 0 };
-    g.ship.rotation = 0.0;
-    g.ship.alive = true;
-    g.ship.invulnerable_timer = INVULNERABILITY_TIME;
-    g.score = 0;
-    g.lives = STARTING_LIVES;
-    g.wave = 1;
-    g.fire_cooldown = 0.0;
-    g.respawn_timer = 0.0;
-    g.state = GameState.PLAYING;
+    *g = {
+        .rng = saved_rng,
+        .ship = {
+            .position = { SCREEN_WIDTH / 2.0, SCREEN_HEIGHT / 2.0 },
+            .alive = true,
+            .invulnerable_timer = INVULNERABILITY_TIME
+        },
+        .score = 0,
+        .lives = STARTING_LIVES,
+        .wave = 1,
+        .state = PLAYING
+    };
     spawn_wave(g);
 }
 
 fn void fire_bullet(Game* g)
 {
     if (g.fire_cooldown > 0.0) return;
-    for (int i = 0; i < MAX_BULLETS; i++)
+    foreach (&b : g.bullets)
     {
-        if (!g.bullets[i].active)
+        if (!b.active)
         {
             Vec2 facing = { math::sin(g.ship.rotation), -math::cos(g.ship.rotation) };
-            Vec2 nose = vec2_add(g.ship.position, vec2_scale(facing, SHIP_SIZE));
-            g.bullets[i] = {
+            Vec2 nose = g.ship.position + SHIP_SIZE * facing;
+            *b = {
                 .position = nose,
-                .velocity = vec2_scale(facing, BULLET_SPEED),
+                .velocity = BULLET_SPEED * facing,
                 .lifetime = BULLET_LIFETIME,
                 .active = true,
             };
@@ -198,10 +182,10 @@ fn void fire_bullet(Game* g)
 
 fn void split_asteroid(Game* g, Asteroid* a)
 {
-    g.score += ASTEROID_SCORE[a.size.ordinal];
-    if (a.size != AsteroidSize.SMALL)
+    g.score += a.size.score;
+    if (a.size != SMALL)
     {
-        AsteroidSize next = (AsteroidSize)(a.size.ordinal + 1);
+        AsteroidSize next = ++a.size;
         for (int i = 0; i < ASTEROID_SPLIT_COUNT; i++)
         {
             spawn_asteroid(g, a.position, next);
@@ -212,9 +196,9 @@ fn void split_asteroid(Game* g, Asteroid* a)
 
 fn void update(Game* g, float dt)
 {
-    if (g.state == GameState.GAME_OVER)
+    if (g.state == GAME_OVER)
     {
-        if (rl::is_key_pressed(rl::RLKeyboardKey.ENTER)) init_game(g);
+        if (rl::is_key_pressed(ENTER)) init_game(g);
         return;
     }
 
@@ -232,43 +216,41 @@ fn void update(Game* g, float dt)
     }
     else
     {
-        if (rl::is_key_down(rl::RLKeyboardKey.A) || rl::is_key_down(rl::RLKeyboardKey.LEFT))
+        if (rl::is_key_down(A) || rl::is_key_down(LEFT))
         {
             g.ship.rotation -= SHIP_ROTATION_SPEED * dt;
         }
-        if (rl::is_key_down(rl::RLKeyboardKey.D) || rl::is_key_down(rl::RLKeyboardKey.RIGHT))
+        if (rl::is_key_down(D) || rl::is_key_down(RIGHT))
         {
             g.ship.rotation += SHIP_ROTATION_SPEED * dt;
         }
 
-        if (rl::is_key_down(rl::RLKeyboardKey.W) || rl::is_key_down(rl::RLKeyboardKey.UP))
+        if (rl::is_key_down(W) || rl::is_key_down(UP))
         {
             Vec2 facing = { math::sin(g.ship.rotation), -math::cos(g.ship.rotation) };
-            g.ship.velocity = vec2_add(g.ship.velocity, vec2_scale(facing, SHIP_THRUST * dt));
+            g.ship.velocity +=  SHIP_THRUST * dt * facing;
         }
 
-        if (rl::is_key_down(rl::RLKeyboardKey.SPACE)) fire_bullet(g);
+        if (rl::is_key_down(SPACE)) fire_bullet(g);
 
-        float speed = vec2_length(g.ship.velocity);
+        float speed = g.ship.velocity.length();
         if (speed > MAX_SHIP_SPEED)
         {
-            g.ship.velocity = vec2_scale(g.ship.velocity, MAX_SHIP_SPEED / speed);
+            g.ship.velocity = g.ship.velocity * MAX_SHIP_SPEED / speed;
         }
 
-        float drag_factor = math::pow(SHIP_DRAG, dt);
-        g.ship.velocity = vec2_scale(g.ship.velocity, drag_factor);
+        g.ship.velocity *= math::pow(SHIP_DRAG, dt);
 
-        g.ship.position = vec2_add(g.ship.position, vec2_scale(g.ship.velocity, dt));
+        g.ship.position += dt *g.ship.velocity;
         g.ship.position = wrap_position(g.ship.position);
     }
 
     if (g.fire_cooldown > 0.0) g.fire_cooldown -= dt;
 
-    for (int i = 0; i < MAX_BULLETS; i++)
+    foreach (&b : g.bullets)
     {
-        Bullet* b = &g.bullets[i];
         if (!b.active) continue;
-        b.position = vec2_add(b.position, vec2_scale(b.velocity, dt));
+        b.position += b.velocity * dt;
         b.lifetime -= dt;
         if (b.lifetime <= 0.0 ||
             b.position.x < 0 || b.position.x > SCREEN_WIDTH ||
@@ -278,24 +260,21 @@ fn void update(Game* g, float dt)
         }
     }
 
-    for (int i = 0; i < MAX_ASTEROIDS; i++)
+    foreach (&a : g.asteroids)
     {
-        Asteroid* a = &g.asteroids[i];
         if (!a.active) continue;
-        a.position = vec2_add(a.position, vec2_scale(a.velocity, dt));
+        a.position += dt *a.velocity;
         a.position = wrap_position(a.position);
         a.rotation += a.rotation_speed * dt;
     }
 
-    for (int i = 0; i < MAX_BULLETS; i++)
+    foreach (&b : g.bullets)
     {
-        Bullet* b = &g.bullets[i];
         if (!b.active) continue;
-        for (int j = 0; j < MAX_ASTEROIDS; j++)
+        foreach (&a : g.asteroids)
         {
-            Asteroid* a = &g.asteroids[j];
             if (!a.active) continue;
-            if (circle_collide(b.position, BULLET_RADIUS, a.position, ASTEROID_RADIUS[a.size.ordinal]))
+            if (circle_collide(b.position, BULLET_RADIUS, a.position, a.size.radius))
             {
                 b.active = false;
                 split_asteroid(g, a);
@@ -306,17 +285,16 @@ fn void update(Game* g, float dt)
 
     if (g.ship.alive && g.ship.invulnerable_timer <= 0.0)
     {
-        for (int j = 0; j < MAX_ASTEROIDS; j++)
+        foreach (&a : g.asteroids)
         {
-            Asteroid* a = &g.asteroids[j];
             if (!a.active) continue;
-            if (circle_collide(g.ship.position, SHIP_COLLISION_RADIUS, a.position, ASTEROID_RADIUS[a.size.ordinal]))
+            if (circle_collide(g.ship.position, SHIP_COLLISION_RADIUS, a.position, a.size.radius))
             {
                 g.lives -= 1;
                 g.ship.alive = false;
                 if (g.lives <= 0)
                 {
-                    g.state = GameState.GAME_OVER;
+                    g.state = GAME_OVER;
                 }
                 else
                 {
@@ -330,11 +308,11 @@ fn void update(Game* g, float dt)
     if (g.ship.invulnerable_timer > 0.0) g.ship.invulnerable_timer -= dt;
 
     bool any_asteroids = false;
-    for (int i = 0; i < MAX_ASTEROIDS; i++)
+    foreach (&a : g.asteroids)
     {
-        if (g.asteroids[i].active) { any_asteroids = true; break; }
+        if (a.active) { any_asteroids = true; break; }
     }
-    if (!any_asteroids && g.state == GameState.PLAYING)
+    if (!any_asteroids && g.state == PLAYING)
     {
         g.wave += 1;
         spawn_wave(g);
@@ -359,39 +337,34 @@ fn void draw_ship(Game* g)
         g.ship.position.y - math::cos(g.ship.rotation - 2.5f) * SHIP_SIZE,
     };
 
-    rl::draw_triangle_lines(
-        { nose.x, nose.y },
-        { left.x, left.y },
-        { right.x, right.y },
-        rl::WHITE);
+    rl::draw_triangle_lines(nose, left, right, rl::WHITE);
 }
 
 fn void draw(Game* g)
 {
     rl::begin_drawing();
+    defer rl::end_drawing();
     rl::clear_background(rl::BLACK);
 
     draw_ship(g);
 
-    for (int i = 0; i < MAX_ASTEROIDS; i++)
+    foreach (&a : g.asteroids)
     {
-        Asteroid* a = &g.asteroids[i];
         if (!a.active) continue;
-        rl::draw_circle_lines((int)a.position.x, (int)a.position.y, ASTEROID_RADIUS[a.size.ordinal], rl::GRAY);
+        rl::draw_circle_lines((int)a.position.x, (int)a.position.y, a.size.radius, rl::GRAY);
     }
 
-    for (int i = 0; i < MAX_BULLETS; i++)
+    foreach (&b : g.bullets)
     {
-        Bullet* b = &g.bullets[i];
         if (!b.active) continue;
-        rl::draw_circle_v({ b.position.x, b.position.y }, BULLET_RADIUS, rl::YELLOW);
+        rl::draw_circle_v(b.position, BULLET_RADIUS, rl::YELLOW);
     }
 
     rl::draw_text(rl::text_format("SCORE %d", g.score), 10, 10, 20, rl::WHITE);
     rl::draw_text(rl::text_format("LIVES %d", g.lives), 10, 34, 20, rl::WHITE);
     rl::draw_text(rl::text_format("WAVE %d", g.wave), 10, 58, 20, rl::WHITE);
 
-    if (g.state == GameState.GAME_OVER)
+    if (g.state == GAME_OVER)
     {
         ZString msg = "GAME OVER";
         int w = rl::measure_text(msg, 40);
@@ -400,13 +373,12 @@ fn void draw(Game* g)
         int w2 = rl::measure_text(sub, 20);
         rl::draw_text(sub, SCREEN_WIDTH / 2 - w2 / 2, SCREEN_HEIGHT / 2 + 10, 20, rl::WHITE);
     }
-
-    rl::end_drawing();
 }
 
 fn int main(String[] args)
 {
     rl::init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "Asteroids - C3");
+    defer rl::close_window();
     rl::set_target_fps(60);
 
     Game game;
@@ -420,6 +392,5 @@ fn int main(String[] args)
         draw(&game);
     }
 
-    rl::close_window();
     return 0;
 }
