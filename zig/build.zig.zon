@@ -2,11 +2,11 @@
     .name = .asteroids_zig,
     .version = "0.0.0",
     .fingerprint = 0xbfb6a95edc6dff93,
-    .minimum_zig_version = "0.15.2",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .raylib_zig = .{
-            .url = "git+https://www.github.com/raylib-zig/raylib-zig?ref=devel#a4d18b2d1cf8fdddec68b5b084535fca0475f466",
-            .hash = "raylib_zig-5.6.0-dev-KE8REL5MBQAf3p497t52Xw9P7ojndIkVOWPXnLiLLw2P",
+            .url = "git+https://github.com/raylib-zig/raylib-zig#8758f4cd3a5ae0df6941c4715257223d34c5ad3e",
+            .hash = "raylib_zig-6.0.0-KE8RECZ8BQDm-txuospkpZHbJ6DNpacUF7D88RWQ_qAe",
         },
     },
     .paths = .{

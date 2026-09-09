@@ -10,7 +10,6 @@ pub fn build(b: *std.Build) void {
     });
 
     const raylib = raylib_dep.module("raylib");
-    const raylib_artifact = raylib_dep.artifact("raylib");
 
     const exe = b.addExecutable(.{
         .name = "asteroids",
@@ -22,13 +21,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "raylib", .module = raylib },
             },
         }),
-        // Force the LLVM backend: the system glibc/gcc on this machine emits
-        // .sframe sections with a relocation type Zig's self-hosted ELF
-        // linker doesn't understand yet, which breaks native linking.
-        .use_llvm = true,
     });
-
-    exe.linkLibrary(raylib_artifact);
 
     b.installArtifact(exe);
 
