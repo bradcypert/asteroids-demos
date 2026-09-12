@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use asteroids::domain::{Game, GameConfig, GameState, Input, Radians, ShipState, Turn};
+use asteroids::domain::{Game, GameConfig, Input, Radians, Ship, Turn};
 use glam::Vec2;
 use raylib::prelude::*;
 
@@ -15,7 +15,10 @@ fn main() {
     let config = GameConfig::default();
 
     let (mut rl, thread) = raylib::init()
-        .size(config.screen.width as i32, config.screen.height as i32)
+        .size(
+            config.screen().width() as i32,
+            config.screen().height() as i32,
+        )
         .title("Asteroids - Rust")
         .build();
 
@@ -43,7 +46,7 @@ fn main() {
         game.update(&input, dt, &mut rng);
 
         if rl.is_key_pressed(KeyboardKey::KEY_ENTER) && game.is_game_over() {
-            game = game.restart(&mut rng);
+            game.restart(&mut rng);
         }
 
         let mut d = rl.begin_drawing(&thread);
@@ -54,80 +57,93 @@ fn main() {
 fn draw(d: &mut RaylibDrawHandle, game: &Game, time: f64) {
     d.clear_background(Color::BLACK);
 
-    match game.state() {
-        GameState::Playing(playing) => {
-            let config = game.config();
+    if let Some(playing) = game.playing() {
+        let config = game.config();
 
-            draw_ship(d, playing.player().ship(), config.ship_size, time);
+        let player = playing.player();
+        draw_ship(
+            d,
+            player.ship(),
+            player.is_invulnerable(),
+            config.ship_size(),
+            time,
+        );
 
-            for asteroid in playing.asteroids() {
-                d.draw_circle_lines(
-                    asteroid.position().x as i32,
-                    asteroid.position().y as i32,
-                    asteroid.radius(),
-                    Color::GRAY,
-                );
-            }
-
-            for bullet in playing.bullets() {
-                d.draw_circle_v(
-                    to_rl(bullet.position()),
-                    config.bullet_radius,
-                    Color::YELLOW,
-                );
-            }
-
-            let score = playing.score().value();
-            let lives = playing.player().lives().value();
-            let wave = playing.wave().value();
-
-            d.draw_text(&format!("SCORE {score}"), 10, 10, 20, Color::WHITE);
-            d.draw_text(&format!("LIVES {lives}"), 10, 34, 20, Color::WHITE);
-            d.draw_text(&format!("WAVE {wave}"), 10, 58, 20, Color::WHITE);
-        }
-        GameState::GameOver(game_over) => {
-            let screen = game.config().screen;
-
-            let msg = "GAME OVER";
-            let w = d.measure_text(msg, 40);
-            d.draw_text(
-                msg,
-                screen.width as i32 / 2 - w / 2,
-                screen.height as i32 / 2 - 60,
-                40,
-                Color::RED,
-            );
-
-            let score = format!("FINAL SCORE {}", game_over.final_score().value());
-            let w2 = d.measure_text(&score, 20);
-            d.draw_text(
-                &score,
-                screen.width as i32 / 2 - w2 / 2,
-                screen.height as i32 / 2,
-                20,
-                Color::WHITE,
-            );
-
-            let sub = "Press ENTER to restart";
-            let w3 = d.measure_text(sub, 20);
-            d.draw_text(
-                sub,
-                screen.width as i32 / 2 - w3 / 2,
-                screen.height as i32 / 2 + 40,
-                20,
-                Color::WHITE,
+        for asteroid in playing.asteroids() {
+            d.draw_circle_lines(
+                asteroid.position().x as i32,
+                asteroid.position().y as i32,
+                asteroid.radius(),
+                Color::GRAY,
             );
         }
+
+        for bullet in playing.bullets() {
+            d.draw_circle_v(
+                to_rl(bullet.position()),
+                config.bullet_radius(),
+                Color::YELLOW,
+            );
+        }
+
+        let score = playing.score().value();
+        let lives = playing.player().lives().value();
+        let wave = playing.wave().value();
+
+        d.draw_text(&format!("SCORE {score}"), 10, 10, 20, Color::WHITE);
+        d.draw_text(&format!("LIVES {lives}"), 10, 34, 20, Color::WHITE);
+        d.draw_text(&format!("WAVE {wave}"), 10, 58, 20, Color::WHITE);
+        return;
     }
+
+    let Some(final_score) = game.final_score() else {
+        return;
+    };
+    let screen = game.config().screen();
+
+    let msg = "GAME OVER";
+    let w = d.measure_text(msg, 40);
+    d.draw_text(
+        msg,
+        screen.width() as i32 / 2 - w / 2,
+        screen.height() as i32 / 2 - 60,
+        40,
+        Color::RED,
+    );
+
+    let score = format!("FINAL SCORE {}", final_score.value());
+    let w2 = d.measure_text(&score, 20);
+    d.draw_text(
+        &score,
+        screen.width() as i32 / 2 - w2 / 2,
+        screen.height() as i32 / 2,
+        20,
+        Color::WHITE,
+    );
+
+    let sub = "Press ENTER to restart";
+    let w3 = d.measure_text(sub, 20);
+    d.draw_text(
+        sub,
+        screen.width() as i32 / 2 - w3 / 2,
+        screen.height() as i32 / 2 + 40,
+        20,
+        Color::WHITE,
+    );
 }
 
-fn draw_ship(d: &mut RaylibDrawHandle, state: &ShipState, size: f32, time: f64) {
-    let Some(ship) = state.ship() else {
+fn draw_ship(
+    d: &mut RaylibDrawHandle,
+    ship: Option<&Ship>,
+    invulnerable: bool,
+    size: f32,
+    time: f64,
+) {
+    let Some(ship) = ship else {
         return;
     };
 
-    // Blink while invulnerable.
-    if matches!(state, ShipState::Invulnerable { .. }) && ((time * 10.0) as i64) % 2 == 0 {
+    if invulnerable && ((time * 10.0) as i64) % 2 == 0 {
         return;
     }
 

@@ -53,7 +53,7 @@ fn a_new_game_starts_with_the_first_wave() {
     );
     // The ship spawns with invulnerability (and its blink) active.
     assert!(matches!(
-        playing.player().ship(),
+        playing.player().ship,
         ShipState::Invulnerable { .. }
     ));
 }
@@ -76,6 +76,8 @@ fn screen_wraps_and_bounds() {
 
     assert_eq!(screen.wrap(Vec2::new(-1.0, 50.0)), Vec2::new(99.0, 50.0));
     assert_eq!(screen.wrap(Vec2::new(101.0, 50.0)), Vec2::new(1.0, 50.0));
+    assert_eq!(screen.wrap(Vec2::new(-201.0, 50.0)), Vec2::new(99.0, 50.0));
+    assert_eq!(screen.wrap(Vec2::new(301.0, 50.0)), Vec2::new(1.0, 50.0));
     assert_eq!(screen.wrap(Vec2::new(50.0, -1.0)), Vec2::new(50.0, 99.0));
 
     assert!(screen.contains(Vec2::new(100.0, 100.0)));
@@ -251,7 +253,7 @@ fn ship_hit_drains_a_life_and_respawns() {
     assert_eq!(outcome, PlayOutcome::Continued);
     assert_eq!(playing.player().lives().value(), 2);
     assert!(matches!(
-        playing.player().ship(),
+        playing.player().ship,
         ShipState::Respawning { .. }
     ));
 }

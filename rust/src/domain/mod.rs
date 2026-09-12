@@ -18,17 +18,17 @@ use rand::RngExt;
 pub struct Radians(f32);
 
 impl Radians {
-    pub const ZERO: Self = Self(0.0);
+    const ZERO: Self = Self(0.0);
 
     pub const fn new(radians: f32) -> Self {
         Self(radians)
     }
 
-    pub const fn value(self) -> f32 {
+    const fn value(self) -> f32 {
         self.0
     }
 
-    pub fn random(rng: &mut impl RngExt) -> Self {
+    fn random(rng: &mut impl RngExt) -> Self {
         Self(rng.random_range(0.0..std::f32::consts::TAU))
     }
 
@@ -40,7 +40,7 @@ impl Radians {
         self.0.cos()
     }
 
-    pub fn sin_cos(self) -> (f32, f32) {
+    fn sin_cos(self) -> (f32, f32) {
         self.0.sin_cos()
     }
 }
@@ -70,42 +70,44 @@ impl Sub for Radians {
 /// The playfield rectangle, in world units.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Screen {
-    pub width: f32,
-    pub height: f32,
+    width: f32,
+    height: f32,
 }
 impl Screen {
-    pub const fn new(width: f32, height: f32) -> Self {
+    const fn new(width: f32, height: f32) -> Self {
         Self { width, height }
     }
 
-    pub const fn center(self) -> Vec2 {
+    pub const fn width(self) -> f32 {
+        self.width
+    }
+
+    pub const fn height(self) -> f32 {
+        self.height
+    }
+
+    const fn center(self) -> Vec2 {
         Vec2::new(self.width / 2.0, self.height / 2.0)
     }
 
     /// Wrap a position around the edges, classic-Asteroids style.
-    pub fn wrap(self, mut pos: Vec2) -> Vec2 {
-        if pos.x < 0.0 {
-            pos.x += self.width;
+    fn wrap(self, mut pos: Vec2) -> Vec2 {
+        if !(0.0..=self.width).contains(&pos.x) {
+            pos.x = pos.x.rem_euclid(self.width);
         }
-        if pos.x > self.width {
-            pos.x -= self.width;
-        }
-        if pos.y < 0.0 {
-            pos.y += self.height;
-        }
-        if pos.y > self.height {
-            pos.y -= self.height;
+        if !(0.0..=self.height).contains(&pos.y) {
+            pos.y = pos.y.rem_euclid(self.height);
         }
         pos
     }
 
     /// Whether a point is inside the playfield (inclusive of the edges).
-    pub fn contains(self, pos: Vec2) -> bool {
+    fn contains(self, pos: Vec2) -> bool {
         pos.x >= 0.0 && pos.x <= self.width && pos.y >= 0.0 && pos.y <= self.height
     }
 
     /// A random point on the screen edge, where new asteroids appear.
-    pub fn random_edge(self, rng: &mut impl RngExt) -> Vec2 {
+    fn random_edge(self, rng: &mut impl RngExt) -> Vec2 {
         if rng.random_bool(0.5) {
             let x = if rng.random_bool(0.5) {
                 0.0
@@ -129,44 +131,57 @@ impl Screen {
 /// A range of `f32` values for random sampling; `max` is exclusive, matching
 /// `random_range(min..max)`.
 #[derive(Debug, Clone, Copy)]
-pub struct FloatRange {
-    pub min: f32,
-    pub max: f32,
+struct FloatRange {
+    min: f32,
+    max: f32,
 }
 
 impl FloatRange {
-    pub const fn new(min: f32, max: f32) -> Self {
+    const fn new(min: f32, max: f32) -> Self {
         Self { min, max }
     }
 
-    pub fn sample(self, rng: &mut impl RngExt) -> f32 {
+    fn sample(self, rng: &mut impl RngExt) -> f32 {
         rng.random_range(self.min..self.max)
     }
 }
 
-/// All gameplay tuning. [`Default`] reproduces the original game's feel;
-/// override fields via struct-update syntax for variants or tests.
+/// The game's gameplay tuning.
 #[derive(Debug, Clone, Copy)]
 pub struct GameConfig {
-    pub screen: Screen,
-    pub starting_lives: NonZeroLives,
-    pub starting_asteroids: usize,
-    pub respawn_time: Duration,
-    pub invulnerability_time: Duration,
+    screen: Screen,
+    starting_lives: NonZeroLives,
+    starting_asteroids: usize,
+    respawn_time: Duration,
+    invulnerability_time: Duration,
     /// Ship rotation speed, in radians per second.
-    pub rotation_speed: f32,
-    pub thrust: f32,
-    pub drag: f32,
-    pub max_speed: f32,
-    pub ship_size: f32,
-    pub ship_collision_radius: f32,
-    pub bullet_speed: f32,
-    pub bullet_lifetime: Duration,
-    pub bullet_radius: f32,
-    pub fire_cooldown: Duration,
-    pub asteroid_speed: FloatRange,
+    rotation_speed: f32,
+    thrust: f32,
+    drag: f32,
+    max_speed: f32,
+    ship_size: f32,
+    ship_collision_radius: f32,
+    bullet_speed: f32,
+    bullet_lifetime: Duration,
+    bullet_radius: f32,
+    fire_cooldown: Duration,
+    asteroid_speed: FloatRange,
     /// Asteroid angular velocity, in radians per second.
-    pub asteroid_rotation: FloatRange,
+    asteroid_rotation: FloatRange,
+}
+
+impl GameConfig {
+    pub const fn screen(&self) -> Screen {
+        self.screen
+    }
+
+    pub const fn ship_size(&self) -> f32 {
+        self.ship_size
+    }
+
+    pub const fn bullet_radius(&self) -> f32 {
+        self.bullet_radius
+    }
 }
 
 impl Default for GameConfig {
@@ -208,12 +223,22 @@ impl Game {
         }
     }
 
-    pub fn config(&self) -> GameConfig {
-        self.config
+    pub fn config(&self) -> &GameConfig {
+        &self.config
     }
 
-    pub fn state(&self) -> &GameState {
-        &self.state
+    pub fn playing(&self) -> Option<&PlayingGame> {
+        match &self.state {
+            GameState::Playing(playing) => Some(playing),
+            GameState::GameOver(_) => None,
+        }
+    }
+
+    pub fn final_score(&self) -> Option<Score> {
+        match self.state {
+            GameState::Playing(_) => None,
+            GameState::GameOver(game_over) => Some(game_over.final_score()),
+        }
     }
 
     pub fn is_game_over(&self) -> bool {
@@ -221,11 +246,8 @@ impl Game {
     }
 
     /// Start a fresh game with the same configuration.
-    pub fn restart(self, rng: &mut impl RngExt) -> Self {
-        Self {
-            config: self.config,
-            state: GameState::Playing(PlayingGame::new(self.config, rng)),
-        }
+    pub fn restart(&mut self, rng: &mut impl RngExt) {
+        self.state = GameState::Playing(PlayingGame::new(self.config, rng));
     }
 
     /// Advance the simulation by one frame. No-op while on the game-over
@@ -249,19 +271,19 @@ impl Game {
 /// boxing the large variant would only add an allocation.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub enum GameState {
+enum GameState {
     Playing(PlayingGame),
     GameOver(GameOver),
 }
 
 /// The game-over screen. Owns only the score: the world is gone.
 #[derive(Debug, Clone, Copy)]
-pub struct GameOver {
+struct GameOver {
     final_score: Score,
 }
 
 impl GameOver {
-    pub fn final_score(&self) -> Score {
+    fn final_score(&self) -> Score {
         self.final_score
     }
 }
@@ -277,7 +299,7 @@ pub struct Input {
 
 /// How a frame of play ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlayOutcome {
+enum PlayOutcome {
     /// The session continues.
     Continued,
     /// The player lost their last ship; `score` is the final score.
@@ -297,7 +319,7 @@ pub struct PlayingGame {
 
 impl PlayingGame {
     /// A fresh session with the first wave already spawned.
-    pub fn new(config: GameConfig, rng: &mut impl RngExt) -> Self {
+    fn new(config: GameConfig, rng: &mut impl RngExt) -> Self {
         let mut game = Self {
             config,
             player: Player::new(config),
@@ -331,7 +353,7 @@ impl PlayingGame {
     }
 
     /// Advance one frame: input, physics, collisions, wave progression.
-    pub fn update(&mut self, input: &Input, dt: Duration, rng: &mut impl RngExt) -> PlayOutcome {
+    fn update(&mut self, input: &Input, dt: Duration, rng: &mut impl RngExt) -> PlayOutcome {
         let screen = self.config.screen;
 
         if let Some(turn) = input.turn {
@@ -370,7 +392,7 @@ impl PlayingGame {
     }
 
     fn ship_is_hit(&self) -> bool {
-        self.player.ship().ship().is_some_and(|ship| {
+        self.player.ship().is_some_and(|ship| {
             self.asteroids.iter().any(|asteroid| {
                 circle_collide(
                     ship.position(),
@@ -433,9 +455,9 @@ impl PlayingGame {
 pub struct Score(u32);
 
 impl Score {
-    pub const ZERO: Self = Self(0);
+    const ZERO: Self = Self(0);
 
-    pub const fn new(value: u32) -> Self {
+    const fn new(value: u32) -> Self {
         Self(value)
     }
 
@@ -455,13 +477,13 @@ impl AddAssign for Score {
 pub struct Wave(NonZeroU32);
 
 impl Wave {
-    pub const FIRST: Self = Self(NonZeroU32::MIN);
+    const FIRST: Self = Self(NonZeroU32::MIN);
 
     pub const fn value(self) -> u32 {
         self.0.get()
     }
 
-    pub fn next(self) -> Option<Self> {
+    fn next(self) -> Option<Self> {
         self.0.checked_add(1).map(Self)
     }
 }
@@ -480,14 +502,14 @@ impl NonZeroLives {
         self.0.get()
     }
 
-    pub fn lose_one(self) -> LifeLoss {
+    fn lose_one(self) -> LifeLoss {
         NonZeroU8::new(self.0.get() - 1)
             .map(Self)
             .map_or(LifeLoss::GameOver, LifeLoss::Remaining)
     }
 }
 
-pub enum LifeLoss {
+enum LifeLoss {
     Remaining(NonZeroLives),
     GameOver,
 }
@@ -503,7 +525,7 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(config: GameConfig) -> Self {
+    fn new(config: GameConfig) -> Self {
         Self {
             config,
             lives: config.starting_lives,
@@ -519,11 +541,15 @@ impl Player {
         self.lives
     }
 
-    pub fn ship(&self) -> &ShipState {
-        &self.ship
+    pub fn ship(&self) -> Option<&Ship> {
+        self.ship.ship()
     }
 
-    pub fn update(&mut self, dt: Duration) {
+    pub fn is_invulnerable(&self) -> bool {
+        matches!(self.ship, ShipState::Invulnerable { .. })
+    }
+
+    fn update(&mut self, dt: Duration) {
         self.ship.update(dt, &self.config);
         self.weapon.update(dt);
     }
@@ -532,7 +558,7 @@ impl Player {
     /// unless that was the last life. Invulnerable and respawning ships are
     /// unaffected. Returns `true` when the player has no lives left — i.e. the
     /// game is over.
-    pub fn hit(&mut self) -> bool {
+    fn hit(&mut self) -> bool {
         if !matches!(self.ship, ShipState::Active(_)) {
             return false;
         }
@@ -549,19 +575,19 @@ impl Player {
         }
     }
 
-    pub fn rotate(&mut self, turn: Turn, dt: Duration) {
+    fn rotate(&mut self, turn: Turn, dt: Duration) {
         if let Some(ship) = self.ship.ship_mut() {
             ship.rotate(turn, dt, &self.config);
         }
     }
 
-    pub fn accelerate(&mut self, dt: Duration) {
+    fn accelerate(&mut self, dt: Duration) {
         if let Some(ship) = self.ship.ship_mut() {
             ship.accelerate(dt, &self.config);
         }
     }
 
-    pub fn fire(&mut self) -> Option<Bullet> {
+    fn fire(&mut self) -> Option<Bullet> {
         let ship = self.ship.ship()?;
         self.weapon.fire(FiringPose::from(ship))
     }
@@ -570,7 +596,7 @@ impl Player {
 /// The three states a ship can be in. There is no "dead" state: a dead ship is
 /// either respawning or the game is over.
 #[derive(Debug)]
-pub enum ShipState {
+enum ShipState {
     Active(Ship),
 
     /// Recently respawned; the ship exists but collisions are ignored.
@@ -586,7 +612,7 @@ pub enum ShipState {
 }
 
 impl ShipState {
-    pub fn update(&mut self, dt: Duration, config: &GameConfig) {
+    fn update(&mut self, dt: Duration, config: &GameConfig) {
         if let Self::Active(ship) = self {
             ship.update(dt, config);
             return;
@@ -617,14 +643,14 @@ impl ShipState {
     }
 
     /// The ship, if one currently exists.
-    pub fn ship(&self) -> Option<&Ship> {
+    fn ship(&self) -> Option<&Ship> {
         match self {
             Self::Active(ship) | Self::Invulnerable { ship, .. } => Some(ship),
             Self::Respawning { .. } => None,
         }
     }
 
-    pub fn ship_mut(&mut self) -> Option<&mut Ship> {
+    fn ship_mut(&mut self) -> Option<&mut Ship> {
         match self {
             Self::Active(ship) | Self::Invulnerable { ship, .. } => Some(ship),
             Self::Respawning { .. } => None,
@@ -648,7 +674,7 @@ pub enum Turn {
 
 impl Turn {
     /// Rotation direction on screen: +1 for right, -1 for left.
-    pub fn direction(self) -> f32 {
+    fn direction(self) -> f32 {
         match self {
             Turn::Left => -1.0,
             Turn::Right => 1.0,
@@ -657,7 +683,7 @@ impl Turn {
 }
 
 impl Ship {
-    pub fn spawn(config: &GameConfig) -> Self {
+    fn spawn(config: &GameConfig) -> Self {
         Self {
             position: config.screen.center(),
             velocity: Vec2::ZERO,
@@ -669,27 +695,23 @@ impl Ship {
         self.position
     }
 
-    pub fn velocity(&self) -> Vec2 {
-        self.velocity
-    }
-
     /// The ship's heading; it faces `(sin θ, -cos θ)`.
     pub fn heading(&self) -> Radians {
         self.heading
     }
 
-    pub fn update(&mut self, dt: Duration, config: &GameConfig) {
+    fn update(&mut self, dt: Duration, config: &GameConfig) {
         let dt = dt.as_secs_f32();
         self.velocity *= config.drag.powf(dt);
         self.position += self.velocity * dt;
         self.position = config.screen.wrap(self.position);
     }
 
-    pub fn rotate(&mut self, turn: Turn, dt: Duration, config: &GameConfig) {
+    fn rotate(&mut self, turn: Turn, dt: Duration, config: &GameConfig) {
         self.heading += Radians::new(turn.direction() * config.rotation_speed * dt.as_secs_f32());
     }
 
-    pub fn accelerate(&mut self, dt: Duration, config: &GameConfig) {
+    fn accelerate(&mut self, dt: Duration, config: &GameConfig) {
         self.velocity += self.facing() * (config.thrust * dt.as_secs_f32());
         self.limit_speed(config.max_speed);
     }
@@ -709,7 +731,7 @@ impl Ship {
 
 /// The position and direction needed to fire a weapon.
 #[derive(Debug, Clone, Copy)]
-pub struct FiringPose {
+struct FiringPose {
     origin: Vec2,
     direction: Vec2,
 }
@@ -724,7 +746,7 @@ impl From<&Ship> for FiringPose {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct WeaponConfig {
+struct WeaponConfig {
     cooldown: Duration,
     muzzle_offset: f32,
     bullet_speed: f32,
@@ -732,7 +754,7 @@ pub struct WeaponConfig {
 }
 
 impl WeaponConfig {
-    pub const fn new(
+    const fn new(
         cooldown: Duration,
         muzzle_offset: f32,
         bullet_speed: f32,
@@ -760,19 +782,19 @@ impl From<&GameConfig> for WeaponConfig {
 
 /// The ship's weapon: ready to fire, or cooling down.
 #[derive(Debug)]
-pub struct Weapon {
+struct Weapon {
     config: WeaponConfig,
     state: WeaponState,
 }
 
 #[derive(Debug)]
-pub enum WeaponState {
+enum WeaponState {
     Ready,
     CoolingDown { remaining: Duration },
 }
 
 impl Weapon {
-    pub fn new(config: WeaponConfig) -> Self {
+    fn new(config: WeaponConfig) -> Self {
         Self {
             config,
             state: WeaponState::Ready,
@@ -780,7 +802,7 @@ impl Weapon {
     }
 
     /// Try to fire: creates a bullet and consumes the cooldown when ready.
-    pub fn fire(&mut self, pose: FiringPose) -> Option<Bullet> {
+    fn fire(&mut self, pose: FiringPose) -> Option<Bullet> {
         if !matches!(self.state, WeaponState::Ready) {
             return None;
         }
@@ -796,7 +818,7 @@ impl Weapon {
         ))
     }
 
-    pub fn update(&mut self, dt: Duration) {
+    fn update(&mut self, dt: Duration) {
         if let WeaponState::CoolingDown { remaining } = &mut self.state {
             *remaining = remaining.saturating_sub(dt);
             if remaining.is_zero() {
@@ -816,7 +838,7 @@ pub struct Bullet {
 }
 
 impl Bullet {
-    pub fn new(position: Vec2, velocity: Vec2, remaining: Duration) -> Self {
+    fn new(position: Vec2, velocity: Vec2, remaining: Duration) -> Self {
         Self {
             position,
             velocity,
@@ -828,16 +850,13 @@ impl Bullet {
         self.position
     }
 
-    pub fn velocity(&self) -> Vec2 {
+    #[cfg(test)]
+    fn velocity(&self) -> Vec2 {
         self.velocity
     }
 
-    pub fn remaining(&self) -> Duration {
-        self.remaining
-    }
-
     /// Advance one frame; returns false when the bullet should be removed.
-    pub fn update(&mut self, dt: Duration, screen: Screen) -> bool {
+    fn update(&mut self, dt: Duration, screen: Screen) -> bool {
         self.position += self.velocity * dt.as_secs_f32();
         self.remaining = self.remaining.saturating_sub(dt);
         !self.remaining.is_zero() && screen.contains(self.position)
@@ -846,7 +865,7 @@ impl Bullet {
 
 /// Kinematic state shared by every asteroid, regardless of size.
 #[derive(Debug)]
-pub struct AsteroidBody {
+struct AsteroidBody {
     position: Vec2,
     velocity: Vec2,
     rotation: Radians,
@@ -879,18 +898,6 @@ impl AsteroidBody {
         self.position
     }
 
-    fn velocity(&self) -> Vec2 {
-        self.velocity
-    }
-
-    fn rotation(&self) -> Radians {
-        self.rotation
-    }
-
-    fn angular_velocity(&self) -> f32 {
-        self.angular_velocity
-    }
-
     fn update(&mut self, dt: Duration) {
         let dt = dt.as_secs_f32();
         self.position += self.velocity * dt;
@@ -900,7 +907,7 @@ impl AsteroidBody {
 
 /// The size class of an asteroid; determines how it splits and what it scores.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AsteroidKind {
+enum AsteroidKind {
     Large,
     Medium,
     Small,
@@ -940,7 +947,7 @@ pub struct Asteroid {
 }
 
 /// The result of destroying an asteroid.
-pub enum AsteroidDestruction {
+enum AsteroidDestruction {
     /// The asteroid split into two fragments of the next-smaller size.
     Fragments([Asteroid; 2]),
     /// Small asteroids are destroyed outright.
@@ -954,7 +961,8 @@ impl Asteroid {
         Self { kind, body }
     }
 
-    pub fn kind(&self) -> AsteroidKind {
+    #[cfg(test)]
+    fn kind(&self) -> AsteroidKind {
         self.kind
     }
 
@@ -962,32 +970,20 @@ impl Asteroid {
         self.body.position()
     }
 
-    pub fn velocity(&self) -> Vec2 {
-        self.body.velocity()
-    }
-
-    pub fn rotation(&self) -> Radians {
-        self.body.rotation()
-    }
-
-    pub fn angular_velocity(&self) -> f32 {
-        self.body.angular_velocity()
-    }
-
     pub fn radius(&self) -> f32 {
         self.kind.radius()
     }
 
-    pub fn score(&self) -> Score {
+    fn score(&self) -> Score {
         self.kind.score()
     }
 
-    pub fn update(&mut self, dt: Duration, screen: Screen) {
+    fn update(&mut self, dt: Duration, screen: Screen) {
         self.body.update(dt);
         self.body.position = screen.wrap(self.body.position);
     }
 
-    pub fn destroy(self, rng: &mut impl RngExt, config: &GameConfig) -> AsteroidDestruction {
+    fn destroy(self, rng: &mut impl RngExt, config: &GameConfig) -> AsteroidDestruction {
         let Self { kind, body } = self;
         let Some(fragment_kind) = kind.next_smaller() else {
             return AsteroidDestruction::Destroyed;
