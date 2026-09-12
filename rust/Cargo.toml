@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+glam = "0.30"
 rand = "0.10.2"
 raylib = { version = "6.0.0", features = ["nobuild"] }
