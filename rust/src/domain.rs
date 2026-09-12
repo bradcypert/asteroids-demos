@@ -937,68 +937,37 @@ pub enum AsteroidKind {
     Small,
 }
 
+impl AsteroidKind {
+    fn radius(self) -> f32 {
+        match self {
+            Self::Large => 40.0,
+            Self::Medium => 22.0,
+            Self::Small => 12.0,
+        }
+    }
+
+    fn score(self) -> Score {
+        match self {
+            Self::Large => Score::new(20),
+            Self::Medium => Score::new(50),
+            Self::Small => Score::new(100),
+        }
+    }
+
+    fn next_smaller(self) -> Option<Self> {
+        match self {
+            Self::Large => Some(Self::Medium),
+            Self::Medium => Some(Self::Small),
+            Self::Small => None,
+        }
+    }
+}
+
+/// An asteroid with a size kind and shared kinematic state.
 #[derive(Debug)]
-pub struct LargeAsteroid {
+pub struct Asteroid {
+    kind: AsteroidKind,
     body: AsteroidBody,
-}
-
-impl LargeAsteroid {
-    const RADIUS: f32 = 40.0;
-    const SCORE: Score = Score::new(20);
-
-    fn new(body: AsteroidBody) -> Self {
-        Self { body }
-    }
-
-    /// Split into two mediums, spawned at this asteroid's position.
-    fn split(self, rng: &mut impl RngExt, config: &GameConfig) -> [MediumAsteroid; 2] {
-        std::array::from_fn(|_| {
-            MediumAsteroid::new(AsteroidBody::random_at(self.body.position, rng, config))
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct MediumAsteroid {
-    body: AsteroidBody,
-}
-
-impl MediumAsteroid {
-    const RADIUS: f32 = 22.0;
-    const SCORE: Score = Score::new(50);
-
-    fn new(body: AsteroidBody) -> Self {
-        Self { body }
-    }
-
-    /// Split into two smalls, spawned at this asteroid's position.
-    fn split(self, rng: &mut impl RngExt, config: &GameConfig) -> [SmallAsteroid; 2] {
-        std::array::from_fn(|_| {
-            SmallAsteroid::new(AsteroidBody::random_at(self.body.position, rng, config))
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct SmallAsteroid {
-    body: AsteroidBody,
-}
-
-impl SmallAsteroid {
-    const RADIUS: f32 = 12.0;
-    const SCORE: Score = Score::new(100);
-
-    fn new(body: AsteroidBody) -> Self {
-        Self { body }
-    }
-}
-
-/// An asteroid of any size; the size class determines radius and score.
-#[derive(Debug)]
-pub enum Asteroid {
-    Large(LargeAsteroid),
-    Medium(MediumAsteroid),
-    Small(SmallAsteroid),
 }
 
 /// The result of destroying an asteroid.
@@ -1013,77 +982,54 @@ impl Asteroid {
     /// Spawning is domain-internal; gameplay uses [`PlayingGame`] to create
     /// asteroids.
     fn new(kind: AsteroidKind, body: AsteroidBody) -> Self {
-        match kind {
-            AsteroidKind::Large => Self::Large(LargeAsteroid::new(body)),
-            AsteroidKind::Medium => Self::Medium(MediumAsteroid::new(body)),
-            AsteroidKind::Small => Self::Small(SmallAsteroid::new(body)),
-        }
+        Self { kind, body }
+    }
+
+    pub fn kind(&self) -> AsteroidKind {
+        self.kind
     }
 
     pub fn position(&self) -> Vec2 {
-        self.body().position()
+        self.body.position()
     }
 
     pub fn velocity(&self) -> Vec2 {
-        self.body().velocity()
+        self.body.velocity()
     }
 
     pub fn rotation(&self) -> Radians {
-        self.body().rotation()
+        self.body.rotation()
     }
 
     pub fn angular_velocity(&self) -> f32 {
-        self.body().angular_velocity()
+        self.body.angular_velocity()
     }
 
     pub fn radius(&self) -> f32 {
-        match self {
-            Self::Large(_) => LargeAsteroid::RADIUS,
-            Self::Medium(_) => MediumAsteroid::RADIUS,
-            Self::Small(_) => SmallAsteroid::RADIUS,
-        }
+        self.kind.radius()
     }
 
     pub fn score(&self) -> Score {
-        match self {
-            Self::Large(_) => LargeAsteroid::SCORE,
-            Self::Medium(_) => MediumAsteroid::SCORE,
-            Self::Small(_) => SmallAsteroid::SCORE,
-        }
+        self.kind.score()
     }
 
     pub fn update(&mut self, dt: Duration, screen: Screen) {
-        let body = self.body_mut();
-        body.update(dt);
-        body.position = screen.wrap(body.position);
+        self.body.update(dt);
+        self.body.position = screen.wrap(self.body.position);
     }
 
     pub fn destroy(self, rng: &mut impl RngExt, config: &GameConfig) -> AsteroidDestruction {
-        match self {
-            Self::Large(asteroid) => {
-                AsteroidDestruction::Fragments(asteroid.split(rng, config).map(Self::Medium))
-            }
-            Self::Medium(asteroid) => {
-                AsteroidDestruction::Fragments(asteroid.split(rng, config).map(Self::Small))
-            }
-            Self::Small(_) => AsteroidDestruction::Destroyed,
-        }
-    }
+        let Self { kind, body } = self;
+        let Some(fragment_kind) = kind.next_smaller() else {
+            return AsteroidDestruction::Destroyed;
+        };
 
-    fn body(&self) -> &AsteroidBody {
-        match self {
-            Self::Large(asteroid) => &asteroid.body,
-            Self::Medium(asteroid) => &asteroid.body,
-            Self::Small(asteroid) => &asteroid.body,
-        }
-    }
-
-    fn body_mut(&mut self) -> &mut AsteroidBody {
-        match self {
-            Self::Large(asteroid) => &mut asteroid.body,
-            Self::Medium(asteroid) => &mut asteroid.body,
-            Self::Small(asteroid) => &mut asteroid.body,
-        }
+        AsteroidDestruction::Fragments(std::array::from_fn(|_| {
+            Self::new(
+                fragment_kind,
+                AsteroidBody::random_at(body.position, rng, config),
+            )
+        }))
     }
 }
 
@@ -1152,7 +1098,7 @@ mod tests {
             playing
                 .asteroids()
                 .iter()
-                .all(|a| matches!(a, Asteroid::Large(_)))
+                .all(|a| a.kind() == AsteroidKind::Large)
         );
         // The ship spawns with invulnerability (and its blink) active.
         assert!(matches!(
@@ -1288,7 +1234,7 @@ mod tests {
         match asteroid.destroy(&mut rng(), &config) {
             AsteroidDestruction::Fragments(fragments) => {
                 assert_eq!(fragments.len(), 2);
-                assert!(fragments.iter().all(|a| matches!(a, Asteroid::Medium(_))));
+                assert!(fragments.iter().all(|a| a.kind() == AsteroidKind::Medium));
                 assert_eq!(fragments[0].position(), Vec2::new(100.0, 100.0));
                 assert_eq!(fragments[1].position(), Vec2::new(100.0, 100.0));
             }
@@ -1330,7 +1276,7 @@ mod tests {
             playing
                 .asteroids()
                 .iter()
-                .all(|a| matches!(a, Asteroid::Medium(_)))
+                .all(|a| a.kind() == AsteroidKind::Medium)
         );
     }
 
@@ -1399,7 +1345,7 @@ mod tests {
             playing
                 .asteroids()
                 .iter()
-                .all(|a| matches!(a, Asteroid::Large(_)))
+                .all(|a| a.kind() == AsteroidKind::Large)
         );
     }
 
