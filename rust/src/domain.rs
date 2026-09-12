@@ -562,7 +562,7 @@ impl Player {
                 ship: Ship::spawn(&config),
                 remaining: config.invulnerability_time,
             },
-            weapon: Weapon::new(config.fire_cooldown),
+            weapon: Weapon::new(WeaponConfig::from(&config)),
         }
     }
 
@@ -614,10 +614,7 @@ impl Player {
 
     pub fn fire(&mut self) -> Option<Bullet> {
         let ship = self.ship.ship()?;
-        if !self.weapon.fire() {
-            return None;
-        }
-        Some(ship.fire(&self.config))
+        self.weapon.fire(FiringPose::from(ship))
     }
 }
 
@@ -757,15 +754,6 @@ impl Ship {
         self.limit_speed(config.max_speed);
     }
 
-    pub fn fire(&self, config: &GameConfig) -> Bullet {
-        let facing = self.facing();
-        Bullet::new(
-            self.position + facing * config.ship_size,
-            facing * config.bullet_speed,
-            config.bullet_lifetime,
-        )
-    }
-
     fn facing(&self) -> Vec2 {
         let (sin, cos) = self.heading.sin_cos();
         Vec2::new(sin, -cos)
@@ -779,14 +767,65 @@ impl Ship {
     }
 }
 
+/// The position and direction needed to fire a weapon.
+#[derive(Debug, Clone, Copy)]
+pub struct FiringPose {
+    origin: Vec2,
+    direction: Vec2,
+}
+
+impl From<&Ship> for FiringPose {
+    fn from(ship: &Ship) -> Self {
+        Self {
+            origin: ship.position,
+            direction: ship.facing(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Weapon
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Copy)]
+pub struct WeaponConfig {
+    cooldown: Duration,
+    muzzle_offset: f32,
+    bullet_speed: f32,
+    bullet_lifetime: Duration,
+}
+
+impl WeaponConfig {
+    pub const fn new(
+        cooldown: Duration,
+        muzzle_offset: f32,
+        bullet_speed: f32,
+        bullet_lifetime: Duration,
+    ) -> Self {
+        Self {
+            cooldown,
+            muzzle_offset,
+            bullet_speed,
+            bullet_lifetime,
+        }
+    }
+}
+
+impl From<&GameConfig> for WeaponConfig {
+    fn from(config: &GameConfig) -> Self {
+        Self::new(
+            config.fire_cooldown,
+            config.ship_size,
+            config.bullet_speed,
+            config.bullet_lifetime,
+        )
+    }
+}
+
 /// The ship's weapon: ready to fire, or cooling down.
 #[derive(Debug)]
 pub struct Weapon {
-    cooldown: Duration,
+    config: WeaponConfig,
     state: WeaponState,
 }
 
@@ -797,23 +836,28 @@ pub enum WeaponState {
 }
 
 impl Weapon {
-    pub fn new(cooldown: Duration) -> Self {
+    pub fn new(config: WeaponConfig) -> Self {
         Self {
-            cooldown,
+            config,
             state: WeaponState::Ready,
         }
     }
 
-    /// Try to fire: consumes the cooldown when ready, returns whether a shot
-    /// was fired.
-    pub fn fire(&mut self) -> bool {
+    /// Try to fire: creates a bullet and consumes the cooldown when ready.
+    pub fn fire(&mut self, pose: FiringPose) -> Option<Bullet> {
         if !matches!(self.state, WeaponState::Ready) {
-            return false;
+            return None;
         }
+
+        let facing = pose.direction;
         self.state = WeaponState::CoolingDown {
-            remaining: self.cooldown,
+            remaining: self.config.cooldown,
         };
-        true
+        Some(Bullet::new(
+            pose.origin + facing * self.config.muzzle_offset,
+            facing * self.config.bullet_speed,
+            self.config.bullet_lifetime,
+        ))
     }
 
     pub fn update(&mut self, dt: Duration) {
@@ -1155,12 +1199,15 @@ mod tests {
     }
 
     #[test]
-    fn ship_fires_along_its_facing() {
+    fn weapon_fires_along_the_ship_facing() {
         let config = GameConfig::default();
         let ship = Ship::spawn(&config);
+        let mut weapon = Weapon::new(WeaponConfig::from(&config));
 
         // Heading 0 means facing straight up: (sin 0, -cos 0) = (0, -1).
-        let bullet = ship.fire(&config);
+        let bullet = weapon
+            .fire(FiringPose::from(&ship))
+            .expect("a ready weapon should fire");
         assert!((bullet.velocity().x).abs() < 1e-3);
         assert!((bullet.velocity().y + config.bullet_speed).abs() < 1e-3);
     }
@@ -1197,16 +1244,19 @@ mod tests {
 
     #[test]
     fn weapon_respects_cooldown() {
-        let mut weapon = Weapon::new(Duration::from_millis(250));
+        let config = GameConfig::default();
+        let ship = Ship::spawn(&config);
+        let mut weapon = Weapon::new(WeaponConfig::from(&config));
 
-        assert!(weapon.fire());
-        assert!(!weapon.fire());
+        let pose = FiringPose::from(&ship);
+        assert!(weapon.fire(pose).is_some());
+        assert!(weapon.fire(pose).is_none());
 
         weapon.update(Duration::from_millis(249));
-        assert!(!weapon.fire());
+        assert!(weapon.fire(pose).is_none());
 
         weapon.update(Duration::from_millis(1));
-        assert!(weapon.fire());
+        assert!(weapon.fire(pose).is_some());
     }
 
     #[test]
